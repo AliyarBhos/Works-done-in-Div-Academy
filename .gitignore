@@ -1,5 +1,4 @@
-﻿*.csv
-*.xlsx
+﻿*.xlsx
 data/
 datasets/
 __pycache__/

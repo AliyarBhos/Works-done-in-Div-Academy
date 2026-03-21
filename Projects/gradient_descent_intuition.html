@@ -1,0 +1,224 @@
+
+<!DOCTYPE html>
+<div style="padding: 0.5rem 0">
+
+<canvas id="gd" width="640" height="300" style="width:100%;border-radius:var(--border-radius-lg)"></canvas>
+
+<div style="display:flex;align-items:center;gap:16px;margin-top:12px;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary)">
+    <label for="lr">Learning rate</label>
+    <input type="range" id="lr" min="1" max="10" value="3" step="1" style="width:100px">
+    <span id="lr-val" style="min-width:28px;font-size:13px;font-weight:500;color:var(--color-text-primary)">0.3</span>
+  </div>
+  <button id="restart" style="font-size:13px;padding:4px 14px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-primary);cursor:pointer">
+    Restart ↺
+  </button>
+  <span id="step-label" style="font-size:12px;color:var(--color-text-secondary)">step: 0</span>
+</div>
+
+<script>
+const canvas = document.getElementById('gd');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// Loss surface: J(theta) = (theta-5)^2 * 2 + some bumps
+function loss(t) {
+  return 2*(t-5)*(t-5) + 1.5*Math.sin(t*1.1)*Math.exp(-0.05*(t-5)*(t-5));
+}
+function dLoss(t) {
+  const h = 0.001;
+  return (loss(t+h) - loss(t-h)) / (2*h);
+}
+
+// Map theta (0..10) to x pixels, loss (0..60) to y pixels
+const tMin=0, tMax=10;
+const lMin=0, lMax=55;
+const pad = {l:50, r:20, t:30, b:40};
+
+function tx(t) { return pad.l + (t-tMin)/(tMax-tMin)*(W-pad.l-pad.r); }
+function ty(l) { return H - pad.b - (l-lMin)/(lMax-lMin)*(H-pad.t-pad.b); }
+
+let isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+const textColor = isDark ? '#c2c0b6' : '#3d3d3a';
+const lineColor = isDark ? '#9c9a92' : '#888780';
+const bgColor = isDark ? '#1e1e1c' : '#f8f7f4';
+
+function drawSurface() {
+  ctx.clearRect(0,0,W,H);
+
+  // bg
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0,0,W,H);
+
+  // fill under curve
+  ctx.beginPath();
+  ctx.moveTo(tx(tMin), H - pad.b);
+  for(let t=tMin; t<=tMax; t+=0.05) {
+    ctx.lineTo(tx(t), ty(loss(t)));
+  }
+  ctx.lineTo(tx(tMax), H - pad.b);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(59,139,212,0.10)';
+  ctx.fill();
+
+  // curve
+  ctx.beginPath();
+  ctx.moveTo(tx(tMin), ty(loss(tMin)));
+  for(let t=tMin; t<=tMax; t+=0.05) {
+    ctx.lineTo(tx(t), ty(loss(t)));
+  }
+  ctx.strokeStyle = '#3B8BD4';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // axes
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, H-pad.b+6); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(pad.l-6, H-pad.b); ctx.lineTo(W-pad.r, H-pad.b); ctx.stroke();
+
+  // labels
+  ctx.fillStyle = textColor;
+  ctx.font = '12px "Anthropic Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('θ (parameter)', W/2, H-6);
+  ctx.save();
+  ctx.translate(14, H/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('J(θ) — loss', 0, 0);
+  ctx.restore();
+
+  // x ticks
+  for(let t=0; t<=10; t+=2) {
+    const x = tx(t);
+    ctx.fillText(t, x, H-pad.b+16);
+    ctx.beginPath(); ctx.moveTo(x, H-pad.b); ctx.lineTo(x, H-pad.b+4); ctx.stroke();
+  }
+
+  ctx.fillStyle = textColor;
+  ctx.font = '500 13px "Anthropic Sans", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Loss surface J(θ)', pad.l+8, pad.t+2);
+}
+
+let theta = 0.5;
+let stepCount = 0;
+let trail = [];
+let animId = null;
+let lrVal = 0.3;
+
+function getLR() {
+  const raw = parseInt(document.getElementById('lr').value);
+  return raw * 0.1;
+}
+
+function step() {
+  const grad = dLoss(theta);
+  const newTheta = theta - lrVal * grad;
+  trail.push({t: theta, l: loss(theta)});
+  theta = newTheta;
+  stepCount++;
+}
+
+function draw() {
+  drawSurface();
+
+  // trail
+  if(trail.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(tx(trail[0].t), ty(trail[0].l));
+    for(let i=1; i<trail.length; i++) {
+      ctx.lineTo(tx(trail[i].t), ty(trail[i].l));
+    }
+    ctx.strokeStyle = '#EF9F27';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
+
+  // dots on trail (faded)
+  for(let i=0; i<trail.length; i++) {
+    const alpha = 0.3 + 0.7*(i/Math.max(trail.length-1,1));
+    ctx.beginPath();
+    ctx.arc(tx(trail[i].t), ty(trail[i].l), 3, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(239,159,39,${alpha})`;
+    ctx.fill();
+  }
+
+  // current ball
+  const cx = tx(theta), cy = ty(loss(theta));
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7, 0, Math.PI*2);
+  ctx.fillStyle = '#D85A30';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // gradient arrow
+  const grad = dLoss(theta);
+  const arrowLen = Math.min(Math.abs(grad)*12, 50);
+  const dir = grad > 0 ? -1 : 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + dir*arrowLen, cy);
+  ctx.strokeStyle = '#993C1D';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // minimum marker
+  const minT = 5;
+  ctx.beginPath();
+  ctx.moveTo(tx(minT), ty(loss(minT))-6);
+  ctx.lineTo(tx(minT), ty(loss(minT))+6);
+  ctx.strokeStyle = '#1D9E75';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3,2]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#1D9E75';
+  ctx.font = '11px "Anthropic Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('min', tx(minT), ty(loss(minT))-10);
+
+  document.getElementById('step-label').textContent = `step: ${stepCount}  |  θ = ${theta.toFixed(3)}  |  J = ${loss(theta).toFixed(3)}`;
+}
+
+function animate() {
+  if(stepCount < 60 && Math.abs(dLoss(theta)) > 0.001) {
+    step();
+    draw();
+    animId = setTimeout(animate, 160);
+  } else {
+    draw();
+  }
+}
+
+function restart() {
+  if(animId) clearTimeout(animId);
+  theta = 0.5;
+  stepCount = 0;
+  trail = [];
+  lrVal = getLR();
+  animate();
+}
+
+document.getElementById('lr').addEventListener('input', function() {
+  lrVal = getLR();
+  document.getElementById('lr-val').textContent = lrVal.toFixed(1);
+});
+
+document.getElementById('restart').addEventListener('click', restart);
+
+drawSurface();
+// draw initial ball
+ctx.beginPath();
+ctx.arc(tx(theta), ty(loss(theta)), 7, 0, Math.PI*2);
+ctx.fillStyle = '#D85A30'; ctx.fill();
+ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+
+setTimeout(animate, 600);
+</script>
+</div>

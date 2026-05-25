@@ -91,3 +91,5 @@ It demonstrates hands-on practice, theory understanding, and applied problem-sol
 # 📌 Note
 
 This is a learning-focused repository containing both theory and practical implementations from my Data Science course at Div Academy.
+© 2026 Aliyar Bayramov. All rights reserved.
+This project contains personal study notes and may not be reused without permission.
